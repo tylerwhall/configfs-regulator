@@ -110,15 +110,28 @@ static struct configfs_subsystem group_user_regulator = {
 
 static int __init user_regulator_init(void)
 {
+	int rc;
+
 	config_group_init(&group_user_regulator.su_group);
 	mutex_init(&group_user_regulator.su_mutex);
 
-	return configfs_register_subsystem(&group_user_regulator);
+	rc = platform_driver_register(&configfs_regulator_driver);
+	if (rc)
+		return rc;
+
+	rc = configfs_register_subsystem(&group_user_regulator);
+	if (rc) {
+		platform_driver_unregister(&configfs_regulator_driver);
+		return rc;
+	}
+
+	return 0;
 }
 
 static void __exit user_regulator_exit(void)
 {
 	configfs_unregister_subsystem(&group_user_regulator);
+	platform_driver_unregister(&configfs_regulator_driver);
 }
 
 module_init(user_regulator_init);

@@ -1,4 +1,4 @@
-configfs-regulator-y := configfs.o
+configfs-regulator-y := configfs.o regulator.o
 
 obj-m := configfs-regulator.o
 
