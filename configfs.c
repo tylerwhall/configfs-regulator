@@ -1,5 +1,5 @@
 /*
- * userspace-regulator.c
+ * Configfs interface for creating user-space regulators
  *
  * Copyright 2015 Tyler Hall
  *
@@ -16,6 +16,10 @@
 #include <linux/slab.h>
 #include <linux/configfs.h>
 
+#include "configfs-regulator.h"
+
+#define UREG_MAX_PLATFORM_IDS 128
+static unsigned long platform_ids[BITS_TO_LONGS(UREG_MAX_PLATFORM_IDS)];
 
 static ssize_t user_regulator_attr_show(struct config_item *item,
 					struct configfs_attribute *attr,
@@ -31,9 +35,18 @@ static ssize_t user_regulator_attr_store(struct config_item *item,
 	return count;
 }
 
+static inline struct user_regulator *to_user_regulator(struct config_item *item)
+{
+	return item ? container_of(item, struct user_regulator, config_item) : NULL;
+}
+
 static void user_regulator_release(struct config_item *item)
 {
-	kfree(item);
+	struct user_regulator *ureg = to_user_regulator(item);
+
+	clear_bit(ureg->pdev.id, platform_ids);
+	platform_device_unregister(&ureg->pdev);
+	kfree(ureg);
 }
 
 static struct configfs_item_operations user_regulator_item_ops = {
@@ -49,14 +62,32 @@ static struct config_item_type user_regulator_type = {
 
 static struct config_item *user_regulators_make_item(struct config_group *group, const char *name)
 {
-	struct config_item *item = kzalloc(sizeof(struct config_item), GFP_KERNEL);
+	int rc;
+	struct user_regulator *ureg = kzalloc(sizeof(struct user_regulator), GFP_KERNEL);
 
-	if (!item)
+	if (!ureg)
 		return ERR_PTR(-ENOMEM);
 
-	config_item_init_type_name(item, name, &user_regulator_type);
+	config_item_init_type_name(&ureg->config_item, name, &user_regulator_type);
 
-	return item;
+	ureg->pdev.name = "configfs-regulator";
+	do {
+		ureg->pdev.id = find_first_zero_bit(platform_ids, UREG_MAX_PLATFORM_IDS);
+		if (ureg->pdev.id >= UREG_MAX_PLATFORM_IDS) {
+			pr_err("%s: no platform device ids free\n", __func__);
+			rc = -ENOSPC;
+			goto err;
+		}
+	} while (test_and_set_bit(ureg->pdev.id, platform_ids));
+
+	rc = platform_device_register(&ureg->pdev);
+	if (rc)
+		goto err;
+
+	return &ureg->config_item;
+err:
+	kfree(ureg);
+	return ERR_PTR(rc);
 }
 
 static struct configfs_group_operations user_regulators_group_ops = {

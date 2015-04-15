@@ -1,4 +1,6 @@
-obj-m := userspace-regulator.o
+configfs-regulator-y := configfs.o
+
+obj-m := configfs-regulator.o
 
 SRC := $(shell pwd)
 
